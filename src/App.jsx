@@ -257,17 +257,59 @@ const formatCompact = (val) => {
   return Math.round(Number(val)).toLocaleString('en-US');
 };
 
-// Exact Meta Ads Manager "Results" extractor based on Campaign Objective & Actions
-const extractExactMetaResults = (actions = [], actionValues = [], objective = '') => {
+// Map Meta API indicator / action_type to clean human-readable Result Label
+const formatMetaIndicatorLabel = (indicator = '') => {
+  const ind = String(indicator || '').toLowerCase();
+  if (!ind) return 'Results';
+  if (ind.includes('messaging_conversation_started')) return 'Msg Conversations';
+  if (ind.includes('messaging_first_reply')) return 'Msg Replies';
+  if (ind.includes('total_messaging_connection') || ind.includes('messaging')) return 'Msg Leads';
+  if (ind.includes('purchase') || ind.includes('fb_pixel_purchase')) return 'Purchases';
+  if (ind.includes('lead')) return 'Leads';
+  if (ind.includes('landing_page_view')) return 'Landing Page Views';
+  if (ind.includes('link_click')) return 'Link Clicks';
+  if (ind.includes('thruplay') || ind.includes('video_view')) return 'Video Views';
+  if (ind.includes('post_engagement')) return 'Post Engagements';
+  if (ind.includes('page_engagement')) return 'Page Engagements';
+  if (ind.includes('like')) return 'Page Likes';
+  if (ind.includes('add_to_cart')) return 'Add to Cart';
+  if (ind.includes('reach')) return 'Reach';
+  return 'Results';
+};
+
+// Exact Meta Ads Manager "Results" & "Cost Per Result" extractor
+const extractExactMetaResults = (
+  actions = [],
+  actionValues = [],
+  objective = '',
+  costPerActionType = [],
+  nativeResults = [],
+  nativeCostPerResult = [],
+  spend = 0
+) => {
   const obj = String(objective || '').toUpperCase();
   const getAct = (types) => {
-    if (!Array.isArray(actions)) return 0;
+    if (!Array.isArray(actions)) return { count: 0, matchedType: null };
     for (const t of types) {
       const found = actions.find((a) => a.action_type === t);
-      if (found && found.value !== undefined) return parseFloat(found.value);
+      if (found && found.value !== undefined && parseFloat(found.value) > 0) {
+        return { count: parseFloat(found.value), matchedType: t };
+      }
+    }
+    return { count: 0, matchedType: null };
+  };
+
+  const getCostPerAct = (types) => {
+    if (!Array.isArray(costPerActionType)) return 0;
+    for (const t of types) {
+      const found = costPerActionType.find((a) => a.action_type === t);
+      if (found && found.value !== undefined && parseFloat(found.value) > 0) {
+        return parseFloat(found.value);
+      }
     }
     return 0;
   };
+
   const getVal = (types) => {
     if (!Array.isArray(actionValues)) return 0;
     for (const t of types) {
@@ -277,74 +319,241 @@ const extractExactMetaResults = (actions = [], actionValues = [], objective = ''
     return 0;
   };
 
-  const purchases = getAct([
+  const purchaseTypes = [
     'omni_purchase',
     'purchase',
     'offsite_conversion.fb_pixel_purchase',
     'onsite_web_purchase'
-  ]);
-  const leads = getAct([
+  ];
+  const leadTypes = [
     'lead',
     'onsite_conversion.lead_grouped',
     'offsite_conversion.fb_pixel_lead',
     'omni_complete_registration',
     'complete_registration'
-  ]);
-  const messages = getAct([
+  ];
+  // Strict priority: 7d messaging conversations started first (exact Meta Ads Manager standard for WhatsApp/Messenger/IG DM ads)
+  const messageTypes = [
     'onsite_conversion.messaging_conversation_started_7d',
-    'onsite_conversion.messaging_first_reply',
-    'onsite_conversion.total_messaging_connection'
-  ]);
-  const linkClicks = getAct(['link_click', 'inline_link_click']);
-  const lpv = getAct(['landing_page_view', 'omni_landing_page_view']);
-  const engagement = getAct(['post_engagement', 'page_engagement', 'video_view']);
-  const atc = getAct([
-    'omni_add_to_cart',
-    'add_to_cart',
-    'offsite_conversion.fb_pixel_add_to_cart'
-  ]);
-  const purchaseRevenue = getVal([
-    'omni_purchase',
-    'purchase',
-    'offsite_conversion.fb_pixel_purchase'
-  ]);
+    'onsite_conversion.total_messaging_connection',
+    'onsite_conversion.messaging_first_reply'
+  ];
+  const linkClickTypes = ['link_click', 'inline_link_click'];
+  const lpvTypes = ['landing_page_view', 'omni_landing_page_view'];
+  const pageLikeTypes = ['like', 'page_like'];
+  const thruPlayTypes = ['video_thruplay_watched_actions', 'video_view'];
+  const postEngagementTypes = ['post_engagement', 'page_engagement'];
+  const appInstallTypes = ['omni_app_install', 'mobile_app_install', 'app_install'];
+  const atcTypes = ['omni_add_to_cart', 'add_to_cart', 'offsite_conversion.fb_pixel_add_to_cart'];
 
-  // Match Meta Ads Manager "Results" column logic
+  const purchaseObj = getAct(purchaseTypes);
+  const leadObj = getAct(leadTypes);
+  const messageObj = getAct(messageTypes);
+  const linkClickObj = getAct(linkClickTypes);
+  const lpvObj = getAct(lpvTypes);
+  const pageLikeObj = getAct(pageLikeTypes);
+  const thruPlayObj = getAct(thruPlayTypes);
+  const postEngObj = getAct(postEngagementTypes);
+  const appInstallObj = getAct(appInstallTypes);
+  const atcObj = getAct(atcTypes);
+
+  const purchases = purchaseObj.count;
+  const leads = leadObj.count;
+  const messages = messageObj.count;
+  const linkClicks = linkClickObj.count;
+  const lpv = lpvObj.count;
+  const pageLikes = pageLikeObj.count;
+  const thruPlays = thruPlayObj.count;
+  const postEngagement = postEngObj.count;
+  const appInstalls = appInstallObj.count;
+  const atc = atcObj.count;
+  const purchaseRevenue = getVal(purchaseTypes);
+
+  const exactCostPerMessage =
+    getCostPerAct(messageTypes) || (messages > 0 && spend > 0 ? spend / messages : 0);
+  const exactCostPerLead =
+    getCostPerAct(leadTypes) || (leads > 0 && spend > 0 ? spend / leads : 0);
+  const exactCostPerPurchase =
+    getCostPerAct(purchaseTypes) || (purchases > 0 && spend > 0 ? spend / purchases : 0);
+
+  // 1. First check if Meta Graph API returned native 'results' array (100% identical to Ads Manager "Results" column)
+  if (Array.isArray(nativeResults) && nativeResults.length > 0) {
+    const firstRes = nativeResults[0];
+    const rawVal = firstRes?.values?.[0]?.value;
+    const parsedCount = rawVal !== undefined ? parseFloat(rawVal) : 0;
+    if (parsedCount > 0) {
+      const indicator = firstRes.indicator || '';
+      const label = formatMetaIndicatorLabel(indicator);
+      let nativeCpr = 0;
+      if (Array.isArray(nativeCostPerResult) && nativeCostPerResult.length > 0) {
+        const cprVal = nativeCostPerResult[0]?.values?.[0]?.value;
+        if (cprVal !== undefined) nativeCpr = parseFloat(cprVal);
+      }
+      if (!nativeCpr && indicator) {
+        const cleanInd = indicator.replace(/^actions:/, '');
+        nativeCpr = getCostPerAct([cleanInd, indicator]);
+      }
+      if (!nativeCpr && spend > 0) {
+        nativeCpr = spend / parsedCount;
+      }
+
+      return {
+        primaryResultCount: parsedCount,
+        primaryResultLabel: label,
+        exactCpr: nativeCpr,
+        purchases,
+        leads,
+        messages,
+        exactCostPerMessage,
+        exactCostPerLead,
+        exactCostPerPurchase,
+        linkClicks,
+        lpv,
+        atc,
+        postEngagement,
+        thruPlays,
+        purchaseRevenue
+      };
+    }
+  }
+
+  // 2. Fallback: Match Meta Ads Manager "Results" column logic for every campaign objective
   let primaryResultCount = 0;
   let primaryResultLabel = 'Results';
+  let matchedTypesForCost = [];
 
-  if (obj.includes('LEAD') && leads > 0) {
-    primaryResultCount = leads;
-    primaryResultLabel = 'Leads';
-  } else if ((obj.includes('MESSAGE') || obj.includes('ENGAGEMENT')) && messages > 0) {
-    primaryResultCount = messages;
-    primaryResultLabel = 'Messages';
-  } else if (purchases > 0) {
-    primaryResultCount = purchases;
-    primaryResultLabel = 'Purchases';
-  } else if (leads > 0) {
-    primaryResultCount = leads;
-    primaryResultLabel = 'Leads';
-  } else if (messages > 0) {
-    primaryResultCount = messages;
-    primaryResultLabel = 'Msg Leads';
-  } else if (obj.includes('TRAFFIC') || lpv > 0 || linkClicks > 0) {
-    primaryResultCount = lpv > 0 ? lpv : linkClicks;
-    primaryResultLabel = lpv > 0 ? 'Landing Page Views' : 'Link Clicks';
-  } else if (engagement > 0) {
-    primaryResultCount = engagement;
-    primaryResultLabel = 'Engagements';
+  if (obj.includes('SALES') || obj.includes('CONVERSIONS') || obj.includes('PRODUCT_CATALOG')) {
+    if (purchases > 0) {
+      primaryResultCount = purchases;
+      primaryResultLabel = 'Purchases';
+      matchedTypesForCost = purchaseTypes;
+    } else if (messages > 0) {
+      primaryResultCount = messages;
+      primaryResultLabel = 'Msg Conversations';
+      matchedTypesForCost = messageTypes;
+    } else if (leads > 0) {
+      primaryResultCount = leads;
+      primaryResultLabel = 'Leads';
+      matchedTypesForCost = leadTypes;
+    } else if (atc > 0) {
+      primaryResultCount = atc;
+      primaryResultLabel = 'Add to Cart';
+      matchedTypesForCost = atcTypes;
+    } else {
+      primaryResultCount = lpv > 0 ? lpv : linkClicks;
+      primaryResultLabel = lpv > 0 ? 'Landing Page Views' : 'Link Clicks';
+      matchedTypesForCost = lpv > 0 ? lpvTypes : linkClickTypes;
+    }
+  } else if (obj.includes('LEAD')) {
+    if (leads > 0) {
+      primaryResultCount = leads;
+      primaryResultLabel = 'Leads';
+      matchedTypesForCost = leadTypes;
+    } else if (messages > 0) {
+      primaryResultCount = messages;
+      primaryResultLabel = 'Msg Conversations';
+      matchedTypesForCost = messageTypes;
+    } else {
+      primaryResultCount = linkClicks;
+      primaryResultLabel = 'Link Clicks';
+      matchedTypesForCost = linkClickTypes;
+    }
+  } else if (obj.includes('MESSAGE')) {
+    primaryResultCount = messages > 0 ? messages : linkClicks;
+    primaryResultLabel = messages > 0 ? 'Msg Conversations' : 'Link Clicks';
+    matchedTypesForCost = messages > 0 ? messageTypes : linkClickTypes;
+  } else if (obj.includes('ENGAGEMENT') || obj.includes('POST_ENGAGEMENT') || obj.includes('PAGE_LIKES')) {
+    if (messages > 0) {
+      primaryResultCount = messages;
+      primaryResultLabel = 'Msg Conversations';
+      matchedTypesForCost = messageTypes;
+    } else if (pageLikes > 0 && obj.includes('PAGE_LIKES')) {
+      primaryResultCount = pageLikes;
+      primaryResultLabel = 'Page Likes';
+      matchedTypesForCost = pageLikeTypes;
+    } else if (thruPlays > 0 && postEngagement === 0) {
+      primaryResultCount = thruPlays;
+      primaryResultLabel = 'ThruPlays';
+      matchedTypesForCost = thruPlayTypes;
+    } else if (postEngagement > 0) {
+      primaryResultCount = postEngagement;
+      primaryResultLabel = 'Post Engagements';
+      matchedTypesForCost = postEngagementTypes;
+    } else {
+      primaryResultCount = linkClicks;
+      primaryResultLabel = 'Clicks';
+      matchedTypesForCost = linkClickTypes;
+    }
+  } else if (obj.includes('VIDEO_VIEWS')) {
+    primaryResultCount = thruPlays > 0 ? thruPlays : postEngagement;
+    primaryResultLabel = 'ThruPlays / Views';
+    matchedTypesForCost = thruPlays > 0 ? thruPlayTypes : postEngagementTypes;
+  } else if (obj.includes('TRAFFIC') || obj.includes('LINK_CLICKS')) {
+    if (messages > 0 && lpv === 0) {
+      primaryResultCount = messages;
+      primaryResultLabel = 'Msg Conversations';
+      matchedTypesForCost = messageTypes;
+    } else {
+      primaryResultCount = lpv > 0 ? lpv : linkClicks;
+      primaryResultLabel = lpv > 0 ? 'Landing Page Views' : 'Link Clicks';
+      matchedTypesForCost = lpv > 0 ? lpvTypes : linkClickTypes;
+    }
+  } else if (obj.includes('APP')) {
+    primaryResultCount = appInstalls > 0 ? appInstalls : linkClicks;
+    primaryResultLabel = appInstalls > 0 ? 'App Installs' : 'Link Clicks';
+    matchedTypesForCost = appInstalls > 0 ? appInstallTypes : linkClickTypes;
+  } else {
+    // Fallback priority when objective is account-level or general
+    if (messages > 0 && messages >= purchases && messages >= leads) {
+      primaryResultCount = messages;
+      primaryResultLabel = 'Msg Conversations';
+      matchedTypesForCost = messageTypes;
+    } else if (purchases > 0) {
+      primaryResultCount = purchases;
+      primaryResultLabel = 'Purchases';
+      matchedTypesForCost = purchaseTypes;
+    } else if (leads > 0) {
+      primaryResultCount = leads;
+      primaryResultLabel = 'Leads';
+      matchedTypesForCost = leadTypes;
+    } else if (lpv > 0) {
+      primaryResultCount = lpv;
+      primaryResultLabel = 'Landing Page Views';
+      matchedTypesForCost = lpvTypes;
+    } else if (linkClicks > 0) {
+      primaryResultCount = linkClicks;
+      primaryResultLabel = 'Link Clicks';
+      matchedTypesForCost = linkClickTypes;
+    } else if (postEngagement > 0) {
+      primaryResultCount = postEngagement;
+      primaryResultLabel = 'Engagements';
+      matchedTypesForCost = postEngagementTypes;
+    }
   }
+
+  const apiDirectCpr = getCostPerAct(matchedTypesForCost);
+  const exactCpr =
+    apiDirectCpr > 0
+      ? apiDirectCpr
+      : primaryResultCount > 0 && spend > 0
+      ? spend / primaryResultCount
+      : 0;
 
   return {
     primaryResultCount,
     primaryResultLabel,
+    exactCpr,
     purchases,
     leads,
     messages,
+    exactCostPerMessage,
+    exactCostPerLead,
+    exactCostPerPurchase,
     linkClicks,
     lpv,
     atc,
+    postEngagement,
+    thruPlays,
     purchaseRevenue
   };
 };
@@ -400,6 +609,7 @@ export default function App() {
   const [clientBrandName, setClientBrandName] = useState('');
   const [shareIncludeToken, setShareIncludeToken] = useState(true);
   const [copiedLinkSuccess, setCopiedLinkSuccess] = useState(false);
+  const activeFetchIdRef = useRef(0);
 
   const [newCampaignForm, setNewCampaignForm] = useState({
     name: '',
@@ -439,8 +649,9 @@ export default function App() {
       case 'Yesterday': return 'yesterday';
       case 'Last 7 Days': return 'last_7d';
       case 'Last 30 Days': return 'last_30d';
-      case 'Maximum (Lifetime)': return 'maximum';
-      case 'Custom (Q4 Peak)': return 'maximum';
+      // Meta Graph API v20.0+ / v21.0 requires 'data_maximum' instead of deprecated 'maximum'
+      case 'Maximum (Lifetime)': return 'data_maximum';
+      case 'Custom (Q4 Peak)': return 'data_maximum';
       default: return 'last_30d';
     }
   };
@@ -522,10 +733,16 @@ export default function App() {
     const token = (tokenOverride ?? metaApiToken).trim();
     if (!token || !accountIdToFetch) return;
 
+    // Increment request tracker so slow responses from a previous Ad Account never overwrite the newly selected Ad Account
+    const currentFetchId = ++activeFetchIdRef.current;
+
     setIsFetchingLiveInsights(true);
     setApiErrorMsg(null);
     const metaPreset = mapDatePresetToMeta(presetOverride || datePreset);
     const pool = accountsPoolOverride || discoveredLiveAccounts;
+
+    // Build a helper for date query param with automatic fallback if 'data_maximum' isn't supported on older API versions
+    const getDateQueryParam = (presetCode) => `date_preset=${presetCode}`;
 
     try {
       const targetAccountIds =
@@ -535,89 +752,53 @@ export default function App() {
 
       const primaryAct = targetAccountIds[0];
 
-      // 0. Fetch exact Ad Account currency & name metadata so INR / USD is 100% accurate
-      const accInfoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}?fields=id,name,currency,account_status,business_name&access_token=${encodeURIComponent(token)}`;
-      const accSummaryInsightsUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?level=account&date_preset=${metaPreset}&fields=spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,inline_link_click_ctr,cpc,cpm,actions,action_values,purchase_roas&access_token=${encodeURIComponent(token)}`;
+      // 0. Fetch exact Ad Account currency & name metadata + Account-Level summary
+      const accInfoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}?fields=id,name,currency,account_status,business_name,amount_spent&access_token=${encodeURIComponent(token)}`;
+      let accSummaryInsightsUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?level=account&${getDateQueryParam(metaPreset)}&fields=spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,inline_link_click_ctr,cpc,cpm,actions,action_values,cost_per_action_type,results,cost_per_result,purchase_roas&access_token=${encodeURIComponent(token)}`;
 
-      const [accInfoRes, accSumRes] = await Promise.all([
+      let [accInfoRes, accSumRes] = await Promise.all([
         fetch(accInfoUrl),
         fetch(accSummaryInsightsUrl)
       ]);
       const accInfoJson = await accInfoRes.json();
-      const accSumJson = await accSumRes.json();
+      let accSumJson = await accSumRes.json();
 
-      if (accInfoJson && accInfoJson.currency) {
-        setAdAccounts((prev) =>
-          prev.map((a) =>
-            a.id === primaryAct
-              ? { ...a, name: accInfoJson.name || a.name, currency: accInfoJson.currency }
-              : a
-          )
-        );
+      // Fallback if the user selected 'v19.0' where 'maximum' or 'results' is not supported
+      let effectiveMetaPreset = metaPreset;
+      if (accSumJson?.error) {
+        if (metaPreset === 'data_maximum') {
+          effectiveMetaPreset = 'maximum';
+        }
+        accSummaryInsightsUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?level=account&date_preset=${effectiveMetaPreset}&fields=spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,inline_link_click_ctr,cpc,cpm,actions,action_values,cost_per_action_type,purchase_roas&access_token=${encodeURIComponent(token)}`;
+        accSumRes = await fetch(accSummaryInsightsUrl);
+        accSumJson = await accSumRes.json();
       }
 
-      // Store exact Account-Level totals from Meta Ads Manager (so Reach, Impressions, CPM, CTR & ROAS are 100% identical to Ads Manager)
-      const accRow = Array.isArray(accSumJson?.data) && accSumJson.data.length > 0 ? accSumJson.data[0] : null;
-      if (accRow) {
-        const parsedResults = extractExactMetaResults(accRow.actions, accRow.action_values, '');
-        const sp = parseFloat(accRow.spend || 0);
-        const imp = parseInt(accRow.impressions || 0, 10);
-        const rch = parseInt(accRow.reach || 0, 10);
-        const allClicks = parseInt(accRow.clicks || 0, 10);
-        const lnk = parsedResults.linkClicks || parseInt(accRow.inline_link_clicks || accRow.clicks || 0, 10);
-        const exactCpm = imp > 0 ? (sp / imp) * 1000 : parseFloat(accRow.cpm || 0);
-        const exactCtr = imp > 0 ? (allClicks > 0 ? (allClicks / imp) * 100 : (lnk / imp) * 100) : parseFloat(accRow.ctr || 0);
-        const exactLinkCtr = imp > 0 ? (lnk / imp) * 100 : parseFloat(accRow.inline_link_click_ctr || 0);
-        const exactCpc = lnk > 0 ? sp / lnk : parseFloat(accRow.cpc || 0);
-        const directRoas =
-          Array.isArray(accRow.purchase_roas) && accRow.purchase_roas.length > 0
-            ? parseFloat(accRow.purchase_roas[0].value || 0)
-            : sp > 0 && parsedResults.purchaseRevenue > 0
-            ? parsedResults.purchaseRevenue / sp
-            : 0;
+      if (currentFetchId !== activeFetchIdRef.current) return;
 
-        setExactAccountOverview({
-          spend: sp,
-          impressions: imp,
-          reach: rch,
-          frequency: rch > 0 ? imp / rch : parseFloat(accRow.frequency || 0),
-          allClicks,
-          linkClicks: lnk,
-          ctr: exactCtr,
-          linkCtr: exactLinkCtr,
-          cpc: exactCpc,
-          cpm: exactCpm,
-          landingPageViews: parsedResults.lpv,
-          addToCart: parsedResults.atc,
-          conversions: parsedResults.primaryResultCount,
-          resultLabel: parsedResults.primaryResultLabel,
-          purchases: parsedResults.purchases,
-          leads: parsedResults.leads,
-          messages: parsedResults.messages,
-          revenue: parsedResults.purchaseRevenue,
-          roas: directRoas
-        });
-      } else {
-        setExactAccountOverview({
-          spend: 0,
-          impressions: 0,
-          reach: 0,
-          frequency: 0,
-          allClicks: 0,
-          linkClicks: 0,
-          ctr: 0,
-          linkCtr: 0,
-          cpc: 0,
-          cpm: 0,
-          landingPageViews: 0,
-          addToCart: 0,
-          conversions: 0,
-          resultLabel: 'Results',
-          purchases: 0,
-          leads: 0,
-          messages: 0,
-          revenue: 0,
-          roas: 0
+      if (accInfoJson && !accInfoJson.error) {
+        setAdAccounts((prev) => {
+          const exists = prev.some((a) => a.id === primaryAct);
+          if (!exists) {
+            return [
+              ...prev,
+              {
+                id: primaryAct,
+                name: accInfoJson.name || primaryAct,
+                currency: accInfoJson.currency || 'USD',
+                industry: accInfoJson.business_name || 'Meta Ad Account'
+              }
+            ];
+          }
+          return prev.map((a) =>
+            a.id === primaryAct
+              ? {
+                  ...a,
+                  name: accInfoJson.name || a.name,
+                  currency: accInfoJson.currency || a.currency
+                }
+              : a
+          );
         });
       }
 
@@ -637,6 +818,32 @@ export default function App() {
         'frequency',
         'actions',
         'action_values',
+        'cost_per_action_type',
+        'results',
+        'cost_per_result',
+        'purchase_roas',
+        'quality_ranking',
+        'engagement_rate_ranking',
+        'conversion_rate_ranking'
+      ].join(',');
+
+      const fallbackCampaignFields = [
+        'campaign_id',
+        'campaign_name',
+        'objective',
+        'spend',
+        'impressions',
+        'reach',
+        'clicks',
+        'inline_link_clicks',
+        'ctr',
+        'inline_link_click_ctr',
+        'cpc',
+        'cpm',
+        'frequency',
+        'actions',
+        'action_values',
+        'cost_per_action_type',
         'purchase_roas',
         'quality_ranking',
         'engagement_rate_ranking',
@@ -644,104 +851,100 @@ export default function App() {
       ].join(',');
 
       const campaignPromises = targetAccountIds.map(async (actId) => {
-        // Increased limit=500 so accounts with 50+ campaigns never get truncated at 25
-        const insightsUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/insights?level=campaign&date_preset=${metaPreset}&fields=${campaignFields}&limit=500&access_token=${encodeURIComponent(token)}`;
+        // Fetch BOTH all campaign insights (which includes deleted/archived campaigns that spent in the period) AND campaign metadata
+        let insightsUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/insights?level=campaign&date_preset=${effectiveMetaPreset}&fields=${campaignFields}&limit=500&access_token=${encodeURIComponent(token)}`;
         const campaignsMetaUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/campaigns?fields=id,name,effective_status,status,daily_budget,lifetime_budget,objective&limit=500&access_token=${encodeURIComponent(token)}`;
 
-        const [insRes, cmpRes] = await Promise.all([fetch(insightsUrl), fetch(campaignsMetaUrl)]);
-        const insJson = await insRes.json();
+        let [insRes, cmpRes] = await Promise.all([fetch(insightsUrl), fetch(campaignsMetaUrl)]);
+        let insJson = await insRes.json();
         const cmpJson = await cmpRes.json();
+
+        // Fallback if 'results,cost_per_result' fields are unsupported on older API version
+        if (insJson?.error) {
+          insightsUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/insights?level=campaign&date_preset=${effectiveMetaPreset}&fields=${fallbackCampaignFields}&limit=500&access_token=${encodeURIComponent(token)}`;
+          insRes = await fetch(insightsUrl);
+          insJson = await insRes.json();
+        }
 
         const insightMap = {};
         if (Array.isArray(insJson?.data)) {
           insJson.data.forEach((row) => {
-            insightMap[row.campaign_id] = row;
+            if (row.campaign_id) {
+              insightMap[row.campaign_id] = row;
+            }
           });
         }
 
-        const allMetaCampaigns = Array.isArray(cmpJson?.data) ? cmpJson.data : [];
-
-        // Merge all campaigns from Ads Manager with their exact insights for the selected date range
-        if (allMetaCampaigns.length > 0) {
-          return allMetaCampaigns.map((c) => {
-            const row = insightMap[c.id] || {};
-            const spend = parseFloat(row.spend || 0);
-            const impressions = parseInt(row.impressions || 0, 10);
-            const reach = parseInt(row.reach || 0, 10);
-            const objective = row.objective || c.objective || 'OUTCOME_SALES';
-
-            const exactMetrics = extractExactMetaResults(row.actions, row.action_values, objective);
-            const linkClicks =
-              exactMetrics.linkClicks || parseInt(row.inline_link_clicks || row.clicks || 0, 10);
-
-            const dailyBudget = c.daily_budget
-              ? parseFloat(c.daily_budget) / 100
-              : c.lifetime_budget
-              ? parseFloat(c.lifetime_budget) / 100
-              : 0;
-
-            return {
-              id: c.id,
-              accountId: actId,
-              name: c.name || row.campaign_name || 'Meta Campaign',
-              status: c.effective_status || c.status || 'PAUSED',
-              objective,
-              dailyBudget,
-              spend,
-              impressions,
-              reach,
-              linkClicks,
-              landingPageViews: exactMetrics.lpv,
-              addToCart: exactMetrics.atc,
-              conversions: exactMetrics.primaryResultCount,
-              resultLabel: exactMetrics.primaryResultLabel,
-              purchases: exactMetrics.purchases,
-              leads: exactMetrics.leads,
-              messages: exactMetrics.messages,
-              revenue: exactMetrics.purchaseRevenue,
-              qualityRanking: row.quality_ranking || 'Average',
-              engagementRanking: row.engagement_rate_ranking || 'Average',
-              conversionRanking: row.conversion_rate_ranking || 'Average',
-              creativeFormat: objective.replace('OUTCOME_', ''),
-              creativeHeadline: `${exactMetrics.primaryResultLabel} Campaign • ${c.effective_status || c.status}`,
-              primaryPlacement: 'Meta Ads Manager',
-              historyMultiplier: 1.0
-            };
+        const metaCampaignMap = {};
+        if (Array.isArray(cmpJson?.data)) {
+          cmpJson.data.forEach((c) => {
+            if (c.id) {
+              metaCampaignMap[c.id] = c;
+            }
           });
         }
 
-        // Fallback if only insights returned
-        const insightRows = Array.isArray(insJson?.data) ? insJson.data : [];
-        return insightRows.map((row) => {
+        // Union of all campaign IDs from both insights and campaign list so archived/completed campaigns with spend are NEVER lost
+        const allCampaignIds = Array.from(
+          new Set([...Object.keys(insightMap), ...Object.keys(metaCampaignMap)])
+        );
+
+        return allCampaignIds.map((cid) => {
+          const c = metaCampaignMap[cid] || {};
+          const row = insightMap[cid] || {};
           const spend = parseFloat(row.spend || 0);
           const impressions = parseInt(row.impressions || 0, 10);
           const reach = parseInt(row.reach || 0, 10);
-          const objective = row.objective || 'OUTCOME_SALES';
-          const exactMetrics = extractExactMetaResults(row.actions, row.action_values, objective);
+          const allClicks = parseInt(row.clicks || 0, 10);
+          const objective = row.objective || c.objective || 'OUTCOME_ENGAGEMENT';
+
+          const exactMetrics = extractExactMetaResults(
+            row.actions,
+            row.action_values,
+            objective,
+            row.cost_per_action_type,
+            row.results,
+            row.cost_per_result,
+            spend
+          );
           const linkClicks =
             exactMetrics.linkClicks || parseInt(row.inline_link_clicks || row.clicks || 0, 10);
 
+          const dailyBudget = c.daily_budget
+            ? parseFloat(c.daily_budget) / 100
+            : c.lifetime_budget
+            ? parseFloat(c.lifetime_budget) / 100
+            : 0;
+
+          const effectiveStatus = c.effective_status || c.status || (spend > 0 ? 'ACTIVE' : 'COMPLETED');
+
           return {
-            id: row.campaign_id,
+            id: cid,
             accountId: actId,
-            name: row.campaign_name || 'Meta Campaign',
-            status: 'ACTIVE',
+            name: row.campaign_name || c.name || 'Meta Campaign',
+            status: effectiveStatus,
             objective,
-            dailyBudget: 0,
+            dailyBudget,
             spend,
             impressions,
             reach,
+            allClicks,
             linkClicks,
             landingPageViews: exactMetrics.lpv,
             addToCart: exactMetrics.atc,
             conversions: exactMetrics.primaryResultCount,
             resultLabel: exactMetrics.primaryResultLabel,
+            exactCpr: exactMetrics.exactCpr,
+            purchases: exactMetrics.purchases,
+            leads: exactMetrics.leads,
+            messages: exactMetrics.messages,
+            exactCostPerMessage: exactMetrics.exactCostPerMessage,
             revenue: exactMetrics.purchaseRevenue,
             qualityRanking: row.quality_ranking || 'Average',
             engagementRanking: row.engagement_rate_ranking || 'Average',
             conversionRanking: row.conversion_rate_ranking || 'Average',
-            creativeFormat: objective.replace('OUTCOME_', ''),
-            creativeHeadline: `${exactMetrics.primaryResultLabel} Campaign`,
+            creativeFormat: String(objective).replace('OUTCOME_', ''),
+            creativeHeadline: `${exactMetrics.primaryResultLabel} • ${effectiveStatus}`,
             primaryPlacement: 'Meta Ads Manager',
             historyMultiplier: 1.0
           };
@@ -749,14 +952,216 @@ export default function App() {
       });
 
       const nestedCampaigns = await Promise.all(campaignPromises);
-      const flatCampaigns = nestedCampaigns.flat();
+      if (currentFetchId !== activeFetchIdRef.current) return;
+
+      // Sort campaigns so active/spending campaigns appear at the top
+      const flatCampaigns = nestedCampaigns
+        .flat()
+        .sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
       setCampaigns(flatCampaigns);
 
-      // Time-series daily breakdown (Exact numbers, no fake multipliers)
-      const timeSeriesUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&time_increment=1&fields=date_start,spend,impressions,inline_link_clicks,clicks,ctr,actions,action_values&limit=60&access_token=${encodeURIComponent(token)}`;
-      const tsRes = await fetch(timeSeriesUrl);
-      const tsJson = await tsRes.json();
+      // Sum campaign-level metrics and track spend by result type so Cost Per Result / Cost Per Msg is 100% accurate
+      const campAgg = flatCampaigns.reduce(
+        (acc, cur) => {
+          acc.spend += cur.spend;
+          acc.impressions += cur.impressions;
+          acc.reach += cur.reach;
+          acc.allClicks += cur.allClicks || cur.linkClicks;
+          acc.linkClicks += cur.linkClicks;
+          acc.lpv += cur.landingPageViews;
+          acc.atc += cur.addToCart;
+          acc.conversions += cur.conversions;
+          acc.purchases += cur.purchases || 0;
+          acc.leads += cur.leads || 0;
+          acc.messages += cur.messages || 0;
+          acc.revenue += cur.revenue || 0;
 
+          if (cur.messages > 0) {
+            acc.messageCampaignSpend += cur.spend;
+          }
+          if (cur.spend > 0 && cur.conversions > 0 && cur.resultLabel) {
+            acc.labelCounts[cur.resultLabel] = (acc.labelCounts[cur.resultLabel] || 0) + cur.conversions;
+            acc.labelSpend[cur.resultLabel] = (acc.labelSpend[cur.resultLabel] || 0) + cur.spend;
+          }
+          return acc;
+        },
+        {
+          spend: 0,
+          impressions: 0,
+          reach: 0,
+          allClicks: 0,
+          linkClicks: 0,
+          lpv: 0,
+          atc: 0,
+          conversions: 0,
+          purchases: 0,
+          leads: 0,
+          messages: 0,
+          messageCampaignSpend: 0,
+          revenue: 0,
+          labelCounts: {},
+          labelSpend: {}
+        }
+      );
+
+      // Determine the dominant primary result type for this specific Ad Account
+      let dominantLabel = 'Results';
+      const sortedLabels = Object.entries(campAgg.labelCounts).sort((a, b) => b[1] - a[1]);
+      if (sortedLabels.length > 0) {
+        dominantLabel = sortedLabels[0][0];
+      }
+
+      // Store exact Account-Level totals from Meta Ads Manager, cross-verified with Campaign Totals
+      const accRow = Array.isArray(accSumJson?.data) && accSumJson.data.length > 0 ? accSumJson.data[0] : null;
+      if (accRow) {
+        const sp = parseFloat(accRow.spend || 0) || campAgg.spend;
+        const parsedResults = extractExactMetaResults(
+          accRow.actions,
+          accRow.action_values,
+          '',
+          accRow.cost_per_action_type,
+          accRow.results,
+          accRow.cost_per_result,
+          sp
+        );
+        const imp = parseInt(accRow.impressions || 0, 10) || campAgg.impressions;
+        const rch = parseInt(accRow.reach || 0, 10) || campAgg.reach;
+        const allClicks = parseInt(accRow.clicks || 0, 10) || campAgg.allClicks;
+        const lnk =
+          parsedResults.linkClicks ||
+          parseInt(accRow.inline_link_clicks || accRow.clicks || 0, 10) ||
+          campAgg.linkClicks;
+
+        const exactCpm = imp > 0 ? (sp / imp) * 1000 : parseFloat(accRow.cpm || 0);
+        const exactCtr = parseFloat(accRow.ctr || 0) || (imp > 0 ? (allClicks / imp) * 100 : 0);
+        const exactLinkCtr =
+          parseFloat(accRow.inline_link_click_ctr || 0) || (imp > 0 ? (lnk / imp) * 100 : 0);
+        const exactCpc = lnk > 0 ? sp / lnk : parseFloat(accRow.cpc || 0);
+
+        const totalRev = parsedResults.purchaseRevenue || campAgg.revenue;
+        const directRoas =
+          Array.isArray(accRow.purchase_roas) && accRow.purchase_roas.length > 0
+            ? parseFloat(accRow.purchase_roas[0].value || 0)
+            : sp > 0 && totalRev > 0
+            ? totalRev / sp
+            : 0;
+
+        // If the account primarily runs Messaging campaigns, show exact Messaging Conversations & Cost Per Message
+        const totalMessages = parsedResults.messages || campAgg.messages;
+        const totalPurchases = parsedResults.purchases || campAgg.purchases;
+        const totalLeads = parsedResults.leads || campAgg.leads;
+
+        let totalConv = parsedResults.primaryResultCount;
+        let finalLabel = parsedResults.primaryResultLabel;
+        let exactAccountCpr = parsedResults.exactCpr;
+
+        if (dominantLabel.includes('Msg') && totalMessages > 0) {
+          totalConv = totalMessages;
+          finalLabel = 'Msg Conversations';
+          // Calculate Cost Per Message from messaging campaigns' spend (or Meta's direct cost_per_action_type)
+          exactAccountCpr =
+            campAgg.messageCampaignSpend > 0
+              ? campAgg.messageCampaignSpend / totalMessages
+              : parsedResults.exactCostPerMessage || sp / totalMessages;
+        } else if (campAgg.labelCounts[dominantLabel] > 0) {
+          totalConv = campAgg.labelCounts[dominantLabel];
+          finalLabel = dominantLabel;
+          const labelSp = campAgg.labelSpend[dominantLabel] || sp;
+          exactAccountCpr = labelSp / totalConv;
+        } else if (campAgg.conversions > 0 && totalConv === 0) {
+          totalConv = campAgg.conversions;
+          finalLabel = dominantLabel;
+          exactAccountCpr = sp / totalConv;
+        }
+
+        setExactAccountOverview({
+          spend: sp,
+          impressions: imp,
+          reach: rch,
+          frequency: rch > 0 ? imp / rch : parseFloat(accRow.frequency || 0),
+          allClicks,
+          linkClicks: lnk,
+          ctr: exactCtr,
+          linkCtr: exactLinkCtr,
+          cpc: exactCpc,
+          cpm: exactCpm,
+          landingPageViews: parsedResults.lpv || campAgg.lpv,
+          addToCart: parsedResults.atc || campAgg.atc,
+          conversions: totalConv,
+          resultLabel: finalLabel,
+          exactCpr,
+          purchases: totalPurchases,
+          leads: totalLeads,
+          messages: totalMessages,
+          exactCostPerMessage:
+            campAgg.messageCampaignSpend > 0 && totalMessages > 0
+              ? campAgg.messageCampaignSpend / totalMessages
+              : parsedResults.exactCostPerMessage,
+          revenue: totalRev,
+          roas: directRoas
+        });
+      } else {
+        // Fallback to summed campaign data if account-level insight row is empty
+        const sp = campAgg.spend;
+        const imp = campAgg.impressions;
+        const rch = campAgg.reach;
+        const lnk = campAgg.linkClicks;
+        const domCount = campAgg.labelCounts[dominantLabel] || campAgg.conversions;
+        const domSpend = campAgg.labelSpend[dominantLabel] || sp;
+        setExactAccountOverview({
+          spend: sp,
+          impressions: imp,
+          reach: rch,
+          frequency: rch > 0 ? imp / rch : 0,
+          allClicks: campAgg.allClicks,
+          linkClicks: lnk,
+          ctr: imp > 0 ? ((campAgg.allClicks || lnk) / imp) * 100 : 0,
+          linkCtr: imp > 0 ? (lnk / imp) * 100 : 0,
+          cpc: lnk > 0 ? sp / lnk : 0,
+          cpm: imp > 0 ? (sp / imp) * 1000 : 0,
+          landingPageViews: campAgg.lpv,
+          addToCart: campAgg.atc,
+          conversions: domCount,
+          resultLabel: dominantLabel,
+          exactCpr: domCount > 0 ? domSpend / domCount : 0,
+          purchases: campAgg.purchases,
+          leads: campAgg.leads,
+          messages: campAgg.messages,
+          exactCostPerMessage:
+            campAgg.messages > 0 && campAgg.messageCampaignSpend > 0
+              ? campAgg.messageCampaignSpend / campAgg.messages
+              : 0,
+          revenue: campAgg.revenue,
+          roas: sp > 0 && campAgg.revenue > 0 ? campAgg.revenue / sp : 0
+        });
+      }
+
+      // Fetch Time-Series, Placements, Age/Gender & Country/Region in parallel for the selected Ad Account
+      const timeSeriesUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${effectiveMetaPreset}&time_increment=1&fields=date_start,spend,impressions,inline_link_clicks,clicks,ctr,actions,action_values&limit=90&access_token=${encodeURIComponent(token)}`;
+      const placementUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${effectiveMetaPreset}&breakdowns=publisher_platform,platform_position&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,cpc,cpm,actions,action_values&limit=50&access_token=${encodeURIComponent(token)}`;
+      const demoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${effectiveMetaPreset}&breakdowns=age,gender&fields=spend,impressions,reach,inline_link_clicks,clicks,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
+      const regionUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${effectiveMetaPreset}&breakdowns=country,region&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
+      const countryUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${effectiveMetaPreset}&breakdowns=country&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
+
+      const [tsRes, plRes, demoRes, regRes, cntRes] = await Promise.all([
+        fetch(timeSeriesUrl),
+        fetch(placementUrl),
+        fetch(demoUrl),
+        fetch(regionUrl),
+        fetch(countryUrl)
+      ]);
+
+      const [tsJson, plJson, demoJson, regJson, cntJson] = await Promise.all([
+        tsRes.json(),
+        plRes.json(),
+        demoRes.json(),
+        regRes.json(),
+        cntRes.json()
+      ]);
+
+      if (currentFetchId !== activeFetchIdRef.current) return;
+
+      // 1. Update Time Series (Always replace so previous account's chart never lingers)
       if (Array.isArray(tsJson?.data) && tsJson.data.length > 0) {
         const mappedSeries = tsJson.data.map((d) => {
           const sp = parseFloat(d.spend || 0);
@@ -778,14 +1183,10 @@ export default function App() {
         });
         setTimeSeries(mappedSeries);
       } else {
-        setTimeSeries([{ date: 'Selected Period', spend: 0, conversions: 0, roas: 0, ctr: 0, clicks: 0, impressions: 0 }]);
+        setTimeSeries([{ date: datePreset, spend: 0, conversions: 0, roas: 0, ctr: 0, clicks: 0, impressions: 0 }]);
       }
 
-      // Placements breakdown (Full Platform & Position Breakdown)
-      const placementUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=publisher_platform,platform_position&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,cpc,cpm,actions,action_values&limit=50&access_token=${encodeURIComponent(token)}`;
-      const plRes = await fetch(placementUrl);
-      const plJson = await plRes.json();
-
+      // 2. Update Placements (Always replace so previous account's placements never linger)
       if (Array.isArray(plJson?.data) && plJson.data.length > 0) {
         const mappedPlacements = plJson.data
           .map((p) => {
@@ -822,13 +1223,11 @@ export default function App() {
           })
           .sort((a, b) => b.spend - a.spend);
         setPlacements(mappedPlacements);
+      } else {
+        setPlacements([]);
       }
 
-      // Age & Gender Demographics breakdown from real API (Complete Metrics)
-      const demoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=age,gender&fields=spend,impressions,reach,inline_link_clicks,clicks,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
-      const demoRes = await fetch(demoUrl);
-      const demoJson = await demoRes.json();
-
+      // 3. Update Age & Gender Demographics (Always replace so previous account's age data never lingers)
       if (Array.isArray(demoJson?.data) && demoJson.data.length > 0) {
         const ageGroups = {};
         demoJson.data.forEach((row) => {
@@ -874,16 +1273,11 @@ export default function App() {
           .sort((a, b) => a.age.localeCompare(b.age));
 
         setDemographics(formattedDemo);
+      } else {
+        setDemographics([]);
       }
 
-      // Country & Region Geolocation Breakdown from real API
-      const regionUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=country,region&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
-      const countryUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=country&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
-
-      const [regRes, cntRes] = await Promise.all([fetch(regionUrl), fetch(countryUrl)]);
-      const regJson = await regRes.json();
-      const cntJson = await cntRes.json();
-
+      // 4. Update Region & Country Geolocation Breakdown (Always replace on account switch)
       if (Array.isArray(regJson?.data) && regJson.data.length > 0) {
         const mappedRegions = regJson.data
           .map((r) => {
@@ -912,6 +1306,8 @@ export default function App() {
           })
           .sort((a, b) => b.spend - a.spend);
         setRegionsData(mappedRegions);
+      } else {
+        setRegionsData([]);
       }
 
       if (Array.isArray(cntJson?.data) && cntJson.data.length > 0) {
@@ -957,14 +1353,20 @@ export default function App() {
           })
           .sort((a, b) => b.spend - a.spend);
         setCountriesData(mappedCountries);
+      } else {
+        setCountriesData([]);
       }
 
       const now = new Date();
       setLastSyncTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
-      setApiErrorMsg(err.message || 'Error fetching live insights from Meta API.');
+      if (currentFetchId === activeFetchIdRef.current) {
+        setApiErrorMsg(err.message || 'Error fetching live insights from Meta API.');
+      }
     } finally {
-      setIsFetchingLiveInsights(false);
+      if (currentFetchId === activeFetchIdRef.current) {
+        setIsFetchingLiveInsights(false);
+      }
     }
   };
 
@@ -1181,7 +1583,13 @@ export default function App() {
       const ctr = impressions > 0 ? (linkClicks / impressions) * 100 : 0;
       const cpc = linkClicks > 0 ? spend / linkClicks : 0;
       const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
-      const cpa = conversions > 0 ? spend / conversions : 0;
+      // Use exact Meta API cost_per_result / cost_per_action_type when available
+      const cpa =
+        isLiveApiConnected && c.exactCpr > 0
+          ? c.exactCpr
+          : conversions > 0
+          ? spend / conversions
+          : 0;
       const roas = spend > 0 ? revenue / spend : 0;
       const frequency = reach > 0 ? impressions / reach : 1;
       const lpvRate = linkClicks > 0 ? (landingPageViews / linkClicks) * 100 : 0;
@@ -1207,7 +1615,7 @@ export default function App() {
         convRate
       };
     });
-  }, [campaigns, dateMultiplier]);
+  }, [campaigns, dateMultiplier, isLiveApiConnected]);
 
   const activeScopeCampaigns = useMemo(() => {
     if (selectedCampaignId) {
@@ -1220,7 +1628,12 @@ export default function App() {
     // When Live Meta API is connected and no single campaign filter is active, use the exact Account-Level Insights from Meta Ads Manager
     if (isLiveApiConnected && !selectedCampaignId && exactAccountOverview) {
       const o = exactAccountOverview;
-      const cpa = o.conversions > 0 ? o.spend / o.conversions : 0;
+      const cpa =
+        o.exactCpr > 0
+          ? o.exactCpr
+          : o.conversions > 0
+          ? o.spend / o.conversions
+          : 0;
       const cpm = o.impressions > 0 ? (o.spend / o.impressions) * 1000 : (o.cpm || 0);
       const roas = o.roas > 0 ? o.roas : (o.spend > 0 && o.revenue > 0 ? o.revenue / o.spend : 0);
       const lpvRate = o.linkClicks > 0 ? (o.landingPageViews / o.linkClicks) * 100 : 0;
@@ -1705,7 +2118,12 @@ ${metricsSummary}`;
       title: `3. Cost Per ${totals.resultLabel ? totals.resultLabel.replace(/s$/, '') : 'Result'}`,
       hindiSub: 'Average Cost Per Result (CPR)',
       value: totals.conversions > 0 ? fmtMoney(totals.cpa) : `${activeCurrencySymbol}0.00`,
-      subtitle: totals.conversions > 0 ? `Spend ÷ ${formatNumber(totals.conversions)} Results` : 'No results in period',
+      subtitle:
+        totals.messages > 0 && totals.exactCostPerMessage > 0
+          ? `Cost Per Msg: ${fmtMoney(totals.exactCostPerMessage)} (${formatNumber(totals.messages)} Msgs)`
+          : totals.conversions > 0
+          ? `Exact Cost Per ${totals.resultLabel || 'Result'}`
+          : 'No results in period',
       icon: Activity,
       color: 'from-violet-600/20 to-purple-600/10 border-violet-500/40 text-violet-400',
       badge: 'Exact CPR / CPA'
