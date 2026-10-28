@@ -184,11 +184,28 @@ const PLACEMENT_DATA = [
 ];
 
 const DEMOGRAPHICS_DATA = [
-  { age: '18-24', male: 120, female: 165, roas: 3.1, spend: 1450 },
-  { age: '25-34', male: 310, female: 395, roas: 4.4, spend: 4280 },
-  { age: '35-44', male: 225, female: 260, roas: 4.1, spend: 3120 },
-  { age: '45-54', male: 95, female: 110, roas: 2.9, spend: 1240 },
-  { age: '55+', male: 42, female: 48, roas: 2.3, spend: 570.75 }
+  { age: '18-24', male: 120, female: 165, totalResults: 285, roas: 3.1, spend: 1450, impressions: 42000, reach: 31000, clicks: 980, cpa: 5.09 },
+  { age: '25-34', male: 310, female: 395, totalResults: 705, roas: 4.4, spend: 4280, impressions: 118000, reach: 84000, clicks: 3120, cpa: 6.07 },
+  { age: '35-44', male: 225, female: 260, totalResults: 485, roas: 4.1, spend: 3120, impressions: 86000, reach: 61000, clicks: 2150, cpa: 6.43 },
+  { age: '45-54', male: 95, female: 110, totalResults: 205, roas: 2.9, spend: 1240, impressions: 34000, reach: 24500, clicks: 690, cpa: 6.05 },
+  { age: '55-64', male: 30, female: 34, totalResults: 64, roas: 2.4, spend: 390, impressions: 14000, reach: 10200, clicks: 240, cpa: 6.09 },
+  { age: '65+', male: 12, female: 14, totalResults: 26, roas: 2.1, spend: 180.75, impressions: 6500, reach: 4900, clicks: 95, cpa: 6.95 }
+];
+
+const REGION_DATA = [
+  { name: 'Bagmati Province (Kathmandu)', country: 'NP', spend: 3420, impressions: 112000, reach: 78000, clicks: 2890, conversions: 385, cpa: 8.88, ctr: 2.58, roas: 4.45 },
+  { name: 'Maharashtra (Mumbai / Pune)', country: 'IN', spend: 2680, impressions: 94000, reach: 68000, clicks: 2310, conversions: 268, cpa: 10.00, ctr: 2.46, roas: 4.12 },
+  { name: 'Delhi NCR', country: 'IN', spend: 1950, impressions: 68000, reach: 49000, clicks: 1640, conversions: 182, cpa: 10.71, ctr: 2.41, roas: 3.85 },
+  { name: 'Madhesh Province', country: 'NP', spend: 1420, impressions: 56000, reach: 41000, clicks: 1380, conversions: 164, cpa: 8.66, ctr: 2.46, roas: 4.18 },
+  { name: 'California / Texas', country: 'US', spend: 840, impressions: 18500, reach: 14200, clicks: 460, conversions: 48, cpa: 17.50, ctr: 2.49, roas: 3.60 },
+  { name: 'Dubai / Abu Dhabi', country: 'AE', spend: 350.75, impressions: 11200, reach: 8900, clicks: 270, conversions: 29, cpa: 12.09, ctr: 2.41, roas: 3.92 }
+];
+
+const COUNTRY_DATA = [
+  { country: 'India (IN)', code: 'IN', spend: 5120, impressions: 185000, reach: 132000, clicks: 4420, conversions: 510, cpa: 10.04, ctr: 2.39, roas: 4.05 },
+  { country: 'Nepal (NP)', code: 'NP', spend: 4350, impressions: 168000, reach: 119000, clicks: 4270, conversions: 549, cpa: 7.92, ctr: 2.54, roas: 4.38 },
+  { country: 'United States (US)', code: 'US', spend: 840, impressions: 18500, reach: 14200, clicks: 460, conversions: 48, cpa: 17.50, ctr: 2.49, roas: 3.60 },
+  { country: 'United Arab Emirates (AE)', code: 'AE', spend: 350.75, impressions: 11200, reach: 8900, clicks: 270, conversions: 29, cpa: 12.09, ctr: 2.41, roas: 3.92 }
 ];
 
 const DEVICE_SPLIT = [
@@ -347,6 +364,9 @@ export default function App() {
   const [timeSeries, setTimeSeries] = useState(INITIAL_TIME_SERIES);
   const [placements, setPlacements] = useState(PLACEMENT_DATA);
   const [demographics, setDemographics] = useState(DEMOGRAPHICS_DATA);
+  const [regionsData, setRegionsData] = useState(REGION_DATA);
+  const [countriesData, setCountriesData] = useState(COUNTRY_DATA);
+  const [geoViewMode, setGeoViewMode] = useState('region');
   const [deviceSplit, setDeviceSplit] = useState(DEVICE_SPLIT);
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -517,7 +537,7 @@ export default function App() {
 
       // 0. Fetch exact Ad Account currency & name metadata so INR / USD is 100% accurate
       const accInfoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}?fields=id,name,currency,account_status,business_name&access_token=${encodeURIComponent(token)}`;
-      const accSummaryInsightsUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&fields=spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,cpc,cpm,actions,action_values,purchase_roas&access_token=${encodeURIComponent(token)}`;
+      const accSummaryInsightsUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?level=account&date_preset=${metaPreset}&fields=spend,impressions,reach,frequency,clicks,inline_link_clicks,ctr,inline_link_click_ctr,cpc,cpm,actions,action_values,purchase_roas&access_token=${encodeURIComponent(token)}`;
 
       const [accInfoRes, accSumRes] = await Promise.all([
         fetch(accInfoUrl),
@@ -536,23 +556,37 @@ export default function App() {
         );
       }
 
-      // Store exact Account-Level totals from Meta Ads Manager (so Reach & Frequency are de-duplicated exactly like Ads Manager)
+      // Store exact Account-Level totals from Meta Ads Manager (so Reach, Impressions, CPM, CTR & ROAS are 100% identical to Ads Manager)
       const accRow = Array.isArray(accSumJson?.data) && accSumJson.data.length > 0 ? accSumJson.data[0] : null;
       if (accRow) {
         const parsedResults = extractExactMetaResults(accRow.actions, accRow.action_values, '');
         const sp = parseFloat(accRow.spend || 0);
         const imp = parseInt(accRow.impressions || 0, 10);
         const rch = parseInt(accRow.reach || 0, 10);
+        const allClicks = parseInt(accRow.clicks || 0, 10);
         const lnk = parsedResults.linkClicks || parseInt(accRow.inline_link_clicks || accRow.clicks || 0, 10);
+        const exactCpm = imp > 0 ? (sp / imp) * 1000 : parseFloat(accRow.cpm || 0);
+        const exactCtr = imp > 0 ? (allClicks > 0 ? (allClicks / imp) * 100 : (lnk / imp) * 100) : parseFloat(accRow.ctr || 0);
+        const exactLinkCtr = imp > 0 ? (lnk / imp) * 100 : parseFloat(accRow.inline_link_click_ctr || 0);
+        const exactCpc = lnk > 0 ? sp / lnk : parseFloat(accRow.cpc || 0);
+        const directRoas =
+          Array.isArray(accRow.purchase_roas) && accRow.purchase_roas.length > 0
+            ? parseFloat(accRow.purchase_roas[0].value || 0)
+            : sp > 0 && parsedResults.purchaseRevenue > 0
+            ? parsedResults.purchaseRevenue / sp
+            : 0;
+
         setExactAccountOverview({
           spend: sp,
           impressions: imp,
           reach: rch,
-          frequency: parseFloat(accRow.frequency || (rch > 0 ? imp / rch : 0)),
+          frequency: rch > 0 ? imp / rch : parseFloat(accRow.frequency || 0),
+          allClicks,
           linkClicks: lnk,
-          ctr: parseFloat(accRow.ctr || (imp > 0 ? (lnk / imp) * 100 : 0)),
-          cpc: parseFloat(accRow.cpc || (lnk > 0 ? sp / lnk : 0)),
-          cpm: parseFloat(accRow.cpm || (imp > 0 ? (sp / imp) * 1000 : 0)),
+          ctr: exactCtr,
+          linkCtr: exactLinkCtr,
+          cpc: exactCpc,
+          cpm: exactCpm,
           landingPageViews: parsedResults.lpv,
           addToCart: parsedResults.atc,
           conversions: parsedResults.primaryResultCount,
@@ -560,7 +594,8 @@ export default function App() {
           purchases: parsedResults.purchases,
           leads: parsedResults.leads,
           messages: parsedResults.messages,
-          revenue: parsedResults.purchaseRevenue
+          revenue: parsedResults.purchaseRevenue,
+          roas: directRoas
         });
       } else {
         setExactAccountOverview({
@@ -568,8 +603,10 @@ export default function App() {
           impressions: 0,
           reach: 0,
           frequency: 0,
+          allClicks: 0,
           linkClicks: 0,
           ctr: 0,
+          linkCtr: 0,
           cpc: 0,
           cpm: 0,
           landingPageViews: 0,
@@ -579,7 +616,8 @@ export default function App() {
           purchases: 0,
           leads: 0,
           messages: 0,
-          revenue: 0
+          revenue: 0,
+          roas: 0
         });
       }
 
@@ -593,19 +631,22 @@ export default function App() {
         'clicks',
         'inline_link_clicks',
         'ctr',
+        'inline_link_click_ctr',
         'cpc',
         'cpm',
         'frequency',
         'actions',
         'action_values',
+        'purchase_roas',
         'quality_ranking',
         'engagement_rate_ranking',
         'conversion_rate_ranking'
       ].join(',');
 
       const campaignPromises = targetAccountIds.map(async (actId) => {
-        const insightsUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/insights?level=campaign&date_preset=${metaPreset}&fields=${campaignFields}&limit=100&access_token=${encodeURIComponent(token)}`;
-        const campaignsMetaUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/campaigns?fields=id,name,effective_status,status,daily_budget,lifetime_budget,objective&limit=100&access_token=${encodeURIComponent(token)}`;
+        // Increased limit=500 so accounts with 50+ campaigns never get truncated at 25
+        const insightsUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/insights?level=campaign&date_preset=${metaPreset}&fields=${campaignFields}&limit=500&access_token=${encodeURIComponent(token)}`;
+        const campaignsMetaUrl = `https://graph.facebook.com/${metaApiVersion}/${actId}/campaigns?fields=id,name,effective_status,status,daily_budget,lifetime_budget,objective&limit=500&access_token=${encodeURIComponent(token)}`;
 
         const [insRes, cmpRes] = await Promise.all([fetch(insightsUrl), fetch(campaignsMetaUrl)]);
         const insJson = await insRes.json();
@@ -740,38 +781,51 @@ export default function App() {
         setTimeSeries([{ date: 'Selected Period', spend: 0, conversions: 0, roas: 0, ctr: 0, clicks: 0, impressions: 0 }]);
       }
 
-      // Placements breakdown
-      const placementUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=publisher_platform,platform_position&fields=spend,impressions,inline_link_clicks,clicks,ctr,actions,action_values&limit=10&access_token=${encodeURIComponent(token)}`;
+      // Placements breakdown (Full Platform & Position Breakdown)
+      const placementUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=publisher_platform,platform_position&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,cpc,cpm,actions,action_values&limit=50&access_token=${encodeURIComponent(token)}`;
       const plRes = await fetch(placementUrl);
       const plJson = await plRes.json();
 
       if (Array.isArray(plJson?.data) && plJson.data.length > 0) {
-        const mappedPlacements = plJson.data.slice(0, 6).map((p) => {
-          const sp = parseFloat(p.spend || 0);
-          const exact = extractExactMetaResults(p.actions, p.action_values, '');
-          const conv = exact.primaryResultCount;
-          const rev = exact.purchaseRevenue;
+        const mappedPlacements = plJson.data
+          .map((p) => {
+            const sp = parseFloat(p.spend || 0);
+            const imp = parseInt(p.impressions || 0, 10);
+            const rch = parseInt(p.reach || 0, 10);
+            const exact = extractExactMetaResults(p.actions, p.action_values, '');
+            const clk = exact.linkClicks || parseInt(p.inline_link_clicks || p.clicks || 0, 10);
+            const conv = exact.primaryResultCount;
+            const rev = exact.purchaseRevenue;
 
-          const label = `${p.publisher_platform || 'Meta'} ${p.platform_position || ''}`
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, (l) => l.toUpperCase())
-            .trim();
+            const platformName = (p.publisher_platform || 'Meta').replace(/_/g, ' ').toUpperCase();
+            const posName = (p.platform_position || 'Feed')
+              .replace(/_/g, ' ')
+              .replace(/\b\w/g, (l) => l.toUpperCase());
+            const label = `${platformName} - ${posName}`.trim();
 
-          return {
-            name: label.slice(0, 22),
-            spend: +sp.toFixed(2),
-            conversions: conv,
-            roas: sp > 0 && rev > 0 ? +(rev / sp).toFixed(2) : 0,
-            ctr: +parseFloat(p.ctr || 0).toFixed(2),
-            cpa: conv > 0 ? +(sp / conv).toFixed(2) : 0,
-            bounceRate: 0
-          };
-        });
+            return {
+              name: label,
+              platform: platformName,
+              position: posName,
+              spend: +sp.toFixed(2),
+              impressions: imp,
+              reach: rch,
+              clicks: clk,
+              cpm: imp > 0 ? +((sp / imp) * 1000).toFixed(2) : 0,
+              conversions: conv,
+              resultLabel: exact.primaryResultLabel,
+              roas: sp > 0 && rev > 0 ? +(rev / sp).toFixed(2) : 0,
+              ctr: imp > 0 ? +((clk / imp) * 100).toFixed(2) : +parseFloat(p.ctr || 0).toFixed(2),
+              cpa: conv > 0 ? +(sp / conv).toFixed(2) : 0,
+              bounceRate: 0
+            };
+          })
+          .sort((a, b) => b.spend - a.spend);
         setPlacements(mappedPlacements);
       }
 
-      // Age & Gender Demographics breakdown from real API
-      const demoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=age,gender&fields=spend,actions&limit=50&access_token=${encodeURIComponent(token)}`;
+      // Age & Gender Demographics breakdown from real API (Complete Metrics)
+      const demoUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=age,gender&fields=spend,impressions,reach,inline_link_clicks,clicks,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
       const demoRes = await fetch(demoUrl);
       const demoJson = await demoRes.json();
 
@@ -779,14 +833,130 @@ export default function App() {
         const ageGroups = {};
         demoJson.data.forEach((row) => {
           const age = row.age || 'Unknown';
-          if (!ageGroups[age]) ageGroups[age] = { age, male: 0, female: 0, spend: 0 };
-          const exact = extractExactMetaResults(row.actions, [], '');
+          if (!ageGroups[age]) {
+            ageGroups[age] = {
+              age,
+              male: 0,
+              female: 0,
+              unknownGender: 0,
+              totalResults: 0,
+              spend: 0,
+              impressions: 0,
+              reach: 0,
+              clicks: 0,
+              revenue: 0
+            };
+          }
+          const exact = extractExactMetaResults(row.actions, row.action_values, '');
           const resCount = exact.primaryResultCount;
+          const clk = exact.linkClicks || parseInt(row.inline_link_clicks || row.clicks || 0, 10);
+
           if (row.gender === 'male') ageGroups[age].male += resCount;
           else if (row.gender === 'female') ageGroups[age].female += resCount;
+          else ageGroups[age].unknownGender += resCount;
+
+          ageGroups[age].totalResults += resCount;
           ageGroups[age].spend += parseFloat(row.spend || 0);
+          ageGroups[age].impressions += parseInt(row.impressions || 0, 10);
+          ageGroups[age].reach += parseInt(row.reach || 0, 10);
+          ageGroups[age].clicks += clk;
+          ageGroups[age].revenue += exact.purchaseRevenue;
         });
-        setDemographics(Object.values(ageGroups));
+
+        const formattedDemo = Object.values(ageGroups)
+          .map((g) => ({
+            ...g,
+            spend: +g.spend.toFixed(2),
+            cpa: g.totalResults > 0 ? +(g.spend / g.totalResults).toFixed(2) : 0,
+            ctr: g.impressions > 0 ? +((g.clicks / g.impressions) * 100).toFixed(2) : 0,
+            roas: g.spend > 0 && g.revenue > 0 ? +(g.revenue / g.spend).toFixed(2) : 0
+          }))
+          .sort((a, b) => a.age.localeCompare(b.age));
+
+        setDemographics(formattedDemo);
+      }
+
+      // Country & Region Geolocation Breakdown from real API
+      const regionUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=country,region&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
+      const countryUrl = `https://graph.facebook.com/${metaApiVersion}/${primaryAct}/insights?date_preset=${metaPreset}&breakdowns=country&fields=spend,impressions,reach,inline_link_clicks,clicks,ctr,actions,action_values&limit=100&access_token=${encodeURIComponent(token)}`;
+
+      const [regRes, cntRes] = await Promise.all([fetch(regionUrl), fetch(countryUrl)]);
+      const regJson = await regRes.json();
+      const cntJson = await cntRes.json();
+
+      if (Array.isArray(regJson?.data) && regJson.data.length > 0) {
+        const mappedRegions = regJson.data
+          .map((r) => {
+            const sp = parseFloat(r.spend || 0);
+            const imp = parseInt(r.impressions || 0, 10);
+            const rch = parseInt(r.reach || 0, 10);
+            const exact = extractExactMetaResults(r.actions, r.action_values, '');
+            const clk = exact.linkClicks || parseInt(r.inline_link_clicks || r.clicks || 0, 10);
+            const conv = exact.primaryResultCount;
+            const rev = exact.purchaseRevenue;
+
+            return {
+              name: `${r.region || 'Region'} (${r.country || 'Global'})`,
+              region: r.region || 'All Regions',
+              country: r.country || 'Global',
+              spend: +sp.toFixed(2),
+              impressions: imp,
+              reach: rch,
+              clicks: clk,
+              conversions: conv,
+              resultLabel: exact.primaryResultLabel,
+              cpa: conv > 0 ? +(sp / conv).toFixed(2) : 0,
+              ctr: imp > 0 ? +((clk / imp) * 100).toFixed(2) : 0,
+              roas: sp > 0 && rev > 0 ? +(rev / sp).toFixed(2) : 0
+            };
+          })
+          .sort((a, b) => b.spend - a.spend);
+        setRegionsData(mappedRegions);
+      }
+
+      if (Array.isArray(cntJson?.data) && cntJson.data.length > 0) {
+        const countryNames = {
+          IN: 'India (IN)',
+          NP: 'Nepal (NP)',
+          US: 'United States (US)',
+          AE: 'United Arab Emirates (AE)',
+          GB: 'United Kingdom (GB)',
+          CA: 'Canada (CA)',
+          AU: 'Australia (AU)',
+          SA: 'Saudi Arabia (SA)',
+          QA: 'Qatar (QA)',
+          MY: 'Malaysia (MY)',
+          SG: 'Singapore (SG)',
+          BD: 'Bangladesh (BD)',
+          PK: 'Pakistan (PK)'
+        };
+        const mappedCountries = cntJson.data
+          .map((c) => {
+            const sp = parseFloat(c.spend || 0);
+            const imp = parseInt(c.impressions || 0, 10);
+            const rch = parseInt(c.reach || 0, 10);
+            const exact = extractExactMetaResults(c.actions, c.action_values, '');
+            const clk = exact.linkClicks || parseInt(c.inline_link_clicks || c.clicks || 0, 10);
+            const conv = exact.primaryResultCount;
+            const rev = exact.purchaseRevenue;
+            const code = c.country || 'GL';
+
+            return {
+              country: countryNames[code] || `Country (${code})`,
+              code,
+              spend: +sp.toFixed(2),
+              impressions: imp,
+              reach: rch,
+              clicks: clk,
+              conversions: conv,
+              resultLabel: exact.primaryResultLabel,
+              cpa: conv > 0 ? +(sp / conv).toFixed(2) : 0,
+              ctr: imp > 0 ? +((clk / imp) * 100).toFixed(2) : 0,
+              roas: sp > 0 && rev > 0 ? +(rev / sp).toFixed(2) : 0
+            };
+          })
+          .sort((a, b) => b.spend - a.spend);
+        setCountriesData(mappedCountries);
       }
 
       const now = new Date();
@@ -906,6 +1076,8 @@ export default function App() {
     setTimeSeries(INITIAL_TIME_SERIES);
     setPlacements(PLACEMENT_DATA);
     setDemographics(DEMOGRAPHICS_DATA);
+    setRegionsData(REGION_DATA);
+    setCountriesData(COUNTRY_DATA);
     setDeviceSplit(DEVICE_SPLIT);
     try {
       localStorage.removeItem('meta_pulse_access_token');
@@ -1049,10 +1221,12 @@ export default function App() {
     if (isLiveApiConnected && !selectedCampaignId && exactAccountOverview) {
       const o = exactAccountOverview;
       const cpa = o.conversions > 0 ? o.spend / o.conversions : 0;
-      const roas = o.spend > 0 && o.revenue > 0 ? o.revenue / o.spend : 0;
+      const cpm = o.impressions > 0 ? (o.spend / o.impressions) * 1000 : (o.cpm || 0);
+      const roas = o.roas > 0 ? o.roas : (o.spend > 0 && o.revenue > 0 ? o.revenue / o.spend : 0);
       const lpvRate = o.linkClicks > 0 ? (o.landingPageViews / o.linkClicks) * 100 : 0;
       return {
         ...o,
+        cpm,
         cpa,
         roas,
         lpvRate
@@ -1087,12 +1261,13 @@ export default function App() {
 
     const ctr = agg.impressions > 0 ? (agg.linkClicks / agg.impressions) * 100 : 0;
     const cpc = agg.linkClicks > 0 ? agg.spend / agg.linkClicks : 0;
+    const cpm = agg.impressions > 0 ? (agg.spend / agg.impressions) * 1000 : 0;
     const cpa = agg.conversions > 0 ? agg.spend / agg.conversions : 0;
     const roas = agg.spend > 0 ? agg.revenue / agg.spend : 0;
     const frequency = agg.reach > 0 ? agg.impressions / agg.reach : 0;
     const lpvRate = agg.linkClicks > 0 ? (agg.landingPageViews / agg.linkClicks) * 100 : 0;
 
-    return { ...agg, ctr, cpc, cpa, roas, frequency, lpvRate };
+    return { ...agg, ctr, linkCtr: ctr, cpc, cpm, cpa, roas, frequency, lpvRate };
   }, [activeScopeCampaigns, isLiveApiConnected, selectedCampaignId, exactAccountOverview]);
 
   const filteredCampaigns = useMemo(() => {
@@ -1503,23 +1678,11 @@ ${metricsSummary}`;
     showToast('Report Downloaded', 'Exported granular Meta Ads CSV telemetry.');
   };
 
-  const funnelSteps = useMemo(() => {
-    const imp = totals.impressions || 1;
-    return [
-      { label: 'Impressions', value: totals.impressions, pct: 100, dropLabel: 'Reach Ratio', color: 'from-blue-600 to-blue-500' },
-      { label: 'Unique Reach', value: totals.reach, pct: Math.min(100, (totals.reach / imp) * 100), dropLabel: `${totals.frequency.toFixed(2)}x Avg Freq`, color: 'from-indigo-600 to-blue-500' },
-      { label: 'Link Clicks', value: totals.linkClicks, pct: (totals.linkClicks / imp) * 100, stepConv: `${totals.ctr.toFixed(2)}% CTR`, color: 'from-violet-600 to-indigo-500' },
-      { label: 'Landing Page Views', value: totals.landingPageViews, pct: (totals.landingPageViews / imp) * 100, stepConv: `${totals.lpvRate.toFixed(1)}% LPV Load`, color: 'from-purple-600 to-violet-500' },
-      { label: 'Add to Cart / Leads', value: totals.addToCart, pct: (totals.addToCart / imp) * 100, stepConv: `${((totals.addToCart / (totals.landingPageViews || 1)) * 100).toFixed(1)}% Intent`, color: 'from-emerald-600 to-teal-500' },
-      { label: 'Purchases / Conv.', value: totals.conversions, pct: (totals.conversions / imp) * 100, stepConv: `${((totals.conversions / (totals.landingPageViews || 1)) * 100).toFixed(2)}% CVR`, color: 'from-emerald-500 to-green-400' }
-    ];
-  }, [totals]);
-
-  // Client-Friendly Primary 6 Cards (Shown prominently at the top for easy client understanding)
+  // Client-Friendly Primary 8 Cards (Includes Reach, Impressions, CPM, CTR, ROAS, Spend, Results & CPR)
   const primaryClientCards = [
     {
-      title: 'Total Amount Spent',
-      hindiSub: 'Kul Kharch (Ad Spend)',
+      title: '1. Total Amount Spent',
+      hindiSub: 'Exact Ad Spend in Period',
       value: fmtMoney(totals.spend),
       subtitle: `Currency: ${activeCurrencyCode} (${activeCurrencySymbol}) • ${datePreset}`,
       icon: DollarSign,
@@ -1527,8 +1690,8 @@ ${metricsSummary}`;
       badge: 'Exact Meta Spend'
     },
     {
-      title: `Total ${totals.resultLabel || 'Results'}`,
-      hindiSub: 'Kul Leads / Sales / Messages',
+      title: `2. Total ${totals.resultLabel || 'Results'}`,
+      hindiSub: 'Total Leads, Sales & Messages',
       value: formatNumber(totals.conversions, activeCurrencySymbol),
       subtitle:
         totals.leads > 0 || totals.messages > 0 || totals.purchases > 0
@@ -1539,48 +1702,101 @@ ${metricsSummary}`;
       badge: totals.resultLabel || 'Conversions'
     },
     {
-      title: `Cost Per ${totals.resultLabel ? totals.resultLabel.replace(/s$/, '') : 'Result'}`,
-      hindiSub: 'Ek Result / Lead Ka Kharch (CPR)',
+      title: `3. Cost Per ${totals.resultLabel ? totals.resultLabel.replace(/s$/, '') : 'Result'}`,
+      hindiSub: 'Average Cost Per Result (CPR)',
       value: totals.conversions > 0 ? fmtMoney(totals.cpa) : `${activeCurrencySymbol}0.00`,
-      subtitle: totals.conversions > 0 ? `Spend ÷ ${formatNumber(totals.conversions)} Results` : 'No results recorded in period',
+      subtitle: totals.conversions > 0 ? `Spend ÷ ${formatNumber(totals.conversions)} Results` : 'No results in period',
       icon: Activity,
       color: 'from-violet-600/20 to-purple-600/10 border-violet-500/40 text-violet-400',
-      badge: 'CPR / CPA'
+      badge: 'Exact CPR / CPA'
     },
     {
-      title: 'Total People Reached',
-      hindiSub: 'Kitne Logo Tak Ad Pahuncha',
+      title: '4. Unique Reach',
+      hindiSub: 'Unique People Reached',
       value: formatNumber(totals.reach, activeCurrencySymbol),
-      subtitle: `Total Views (Impressions): ${formatNumber(totals.impressions, activeCurrencySymbol)}`,
+      subtitle: `Ad Frequency: ${totals.frequency.toFixed(2)}x per person`,
       icon: Users,
       color: 'from-cyan-600/20 to-blue-600/10 border-cyan-500/40 text-cyan-400',
-      badge: `${totals.frequency.toFixed(2)}x Avg Frequency`
+      badge: `${totals.frequency.toFixed(2)}x Freq`
     },
     {
-      title: 'Link Clicks & CTR',
-      hindiSub: 'Ad Par Kitne Clicks Aaye',
-      value: formatNumber(totals.linkClicks, activeCurrencySymbol),
-      subtitle: `Cost Per Click (CPC): ${fmtMoney(totals.cpc)}`,
-      icon: MousePointer,
+      title: '5. Total Impressions & CPM',
+      hindiSub: 'Total Ad Views & Cost per 1,000 Views',
+      value: formatNumber(totals.impressions, activeCurrencySymbol),
+      subtitle: `Exact CPM (Cost per 1k Impr.): ${fmtMoney(totals.cpm)}`,
+      icon: Eye,
       color: 'from-amber-600/20 to-orange-600/10 border-amber-500/40 text-amber-400',
+      badge: `CPM: ${fmtMoney(totals.cpm)}`
+    },
+    {
+      title: '6. CTR (Click-Through Rate)',
+      hindiSub: 'Percentage of Viewers Who Clicked',
+      value: `${totals.ctr.toFixed(2)}%`,
+      subtitle: `Link Clicks: ${formatNumber(totals.linkClicks, activeCurrencySymbol)} • Avg CPC: ${fmtMoney(totals.cpc)}`,
+      icon: TrendingUp,
+      color: 'from-indigo-600/20 to-blue-600/10 border-indigo-500/40 text-indigo-400',
+      badge: `CPC: ${fmtMoney(totals.cpc)}`
+    },
+    {
+      title: '7. Link Clicks & LPV',
+      hindiSub: 'Ad Clicks & Landing Page Views',
+      value: formatNumber(totals.linkClicks, activeCurrencySymbol),
+      subtitle: `Landing Page Views: ${formatNumber(totals.landingPageViews, activeCurrencySymbol)} (${totals.lpvRate.toFixed(1)}%)`,
+      icon: MousePointer,
+      color: 'from-teal-600/20 to-emerald-600/10 border-teal-500/40 text-teal-400',
       badge: `${totals.ctr.toFixed(2)}% CTR`
     },
     {
-      title: totals.revenue > 0 ? 'Purchase Value & ROAS' : 'Landing Page Views',
-      hindiSub: totals.revenue > 0 ? 'Kul Bikri Aur Return (ROAS)' : 'Website / Form Open Kiya',
-      value:
-        totals.revenue > 0
-          ? `${totals.roas.toFixed(2)}x ROAS`
-          : formatNumber(totals.landingPageViews, activeCurrencySymbol),
-      subtitle:
-        totals.revenue > 0
-          ? `Sales Value: ${fmtMoney(totals.revenue)}`
-          : `Click-to-Load Rate: ${totals.lpvRate.toFixed(1)}%`,
+      title: '8. Purchase ROAS & Value',
+      hindiSub: 'Return on Ad Spend & Revenue',
+      value: `${totals.roas.toFixed(2)}x ROAS`,
+      subtitle: `Total Conversion Value: ${fmtMoney(totals.revenue)}`,
       icon: Award,
       color: 'from-pink-600/20 to-rose-600/10 border-pink-500/40 text-pink-400',
-      badge: totals.revenue > 0 ? 'E-Com ROAS' : 'Page Loads'
+      badge: totals.revenue > 0 ? 'Live ROAS' : 'Lead / Msg Obj'
     }
   ];
+
+  const funnelSteps = useMemo(() => {
+    const imp = Math.max(1, totals.impressions);
+    return [
+      {
+        label: '1. Impressions',
+        value: totals.impressions,
+        pct: 100,
+        stepConv: `CPM: ${fmtMoney(totals.cpm)}`,
+        color: 'from-blue-600 to-indigo-600'
+      },
+      {
+        label: '2. Unique Reach',
+        value: totals.reach,
+        pct: (totals.reach / imp) * 100,
+        stepConv: `${totals.frequency.toFixed(2)}x Freq`,
+        color: 'from-indigo-600 to-violet-600'
+      },
+      {
+        label: '3. Link Clicks',
+        value: totals.linkClicks,
+        pct: totals.ctr,
+        stepConv: `${totals.ctr.toFixed(2)}% CTR`,
+        color: 'from-cyan-600 to-blue-600'
+      },
+      {
+        label: '4. Landing Page Views',
+        value: totals.landingPageViews,
+        pct: (totals.landingPageViews / imp) * 100,
+        stepConv: `${totals.lpvRate.toFixed(1)}% LPV`,
+        color: 'from-teal-600 to-emerald-600'
+      },
+      {
+        label: `5. ${totals.resultLabel || 'Results'}`,
+        value: totals.conversions,
+        pct: (totals.conversions / imp) * 100,
+        stepConv: `CPR: ${totals.conversions > 0 ? fmtMoney(totals.cpa) : fmtMoney(0)}`,
+        color: 'from-emerald-500 to-green-500'
+      }
+    ];
+  }, [totals, activeCurrencySymbol]);
 
   const renderRankingBadge = (ranking) => {
     if (ranking.includes('Above')) {
@@ -2069,17 +2285,27 @@ ${metricsSummary}`;
           <div>
             <div className="px-4 py-3.5 lg:p-5 flex items-center justify-between border-b border-slate-800/60">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 lg:w-10 lg:h-10 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-600/30 shrink-0">
-                  <Activity className="w-5 h-5 lg:w-6 lg:h-6 text-white" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-sm lg:text-base tracking-tight">MetaPulse</span>
-                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                      AI Pro
+                {/* Custom M.D.R.S Digital Services Brand Logo */}
+                <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-emerald-500 p-[1.5px] shadow-lg shadow-blue-600/30 shrink-0">
+                  <div className="w-full h-full bg-slate-950 rounded-[10px] flex flex-col items-center justify-center relative overflow-hidden">
+                    <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-500/30 rounded-full blur-sm" />
+                    <span className="font-black text-[11px] lg:text-xs tracking-tighter bg-gradient-to-r from-white via-blue-200 to-emerald-300 bg-clip-text text-transparent leading-none">
+                      MDRS
+                    </span>
+                    <span className="text-[7px] font-bold tracking-widest text-blue-400 uppercase mt-0.5 leading-none">
+                      DIGITAL
                     </span>
                   </div>
-                  <p className="text-[11px] lg:text-xs text-slate-400">Real-Time Ads Intelligence</p>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-xs sm:text-sm tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-300 bg-clip-text text-transparent truncate">
+                      M.D.R.S DIGITAL SERVICES
+                    </span>
+                  </div>
+                  <p className="text-[10px] lg:text-[11px] text-slate-400 font-medium">
+                    Global Meta Ads Intelligence
+                  </p>
                 </div>
               </div>
 
@@ -2376,7 +2602,7 @@ ${metricsSummary}`;
                         {adAccounts.find((a) => a.id === selectedAccount)?.name || 'Ad Account Summary'} ({activeCurrencyCode})
                       </h1>
                       <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                        Is period me aapka kul ad spend <strong className="text-blue-400 font-bold">{fmtMoney(totals.spend)}</strong> hua hai, jisse aapke ads <strong className="text-cyan-400 font-bold">{formatNumber(totals.reach, activeCurrencySymbol)}</strong> logo tak pahunche aur aapko kul <strong className="text-emerald-400 font-bold">{formatNumber(totals.conversions, activeCurrencySymbol)} {totals.resultLabel || 'Results'}</strong> mile hain (Har result ka average kharch <strong className="text-violet-400 font-bold">{totals.conversions > 0 ? fmtMoney(totals.cpa) : `${activeCurrencySymbol}0.00`}</strong> aaya hai).
+                        During this period, your total ad spend is <strong className="text-blue-400 font-bold">{fmtMoney(totals.spend)}</strong>, reaching <strong className="text-cyan-400 font-bold">{formatNumber(totals.reach, activeCurrencySymbol)} unique people</strong> (<strong className="text-amber-300 font-bold">{formatNumber(totals.impressions, activeCurrencySymbol)} Impressions</strong> @ <strong className="text-amber-400 font-bold">{fmtMoney(totals.cpm)} CPM</strong>) with a <strong className="text-indigo-300 font-bold">{totals.ctr.toFixed(2)}% CTR</strong> and generating <strong className="text-emerald-400 font-bold">{formatNumber(totals.conversions, activeCurrencySymbol)} {totals.resultLabel || 'Results'}</strong> (CPR: <strong className="text-violet-400 font-bold">{totals.conversions > 0 ? fmtMoney(totals.cpa) : `${activeCurrencySymbol}0.00`}</strong> • ROAS: <strong className="text-pink-400 font-bold">{totals.roas.toFixed(2)}x</strong>).
                       </p>
                     </div>
 
@@ -2406,14 +2632,14 @@ ${metricsSummary}`;
                 <section>
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-                      Main Performance Numbers (Client Quick View)
+                      Main Performance Numbers (8 Core Meta Metrics: Spend, Results, CPR, Reach, Impressions/CPM, CTR, Clicks & ROAS)
                     </h2>
                     <span className="text-xs text-slate-400">
                       Showing values in <strong className="text-slate-200">{activeCurrencyCode} ({activeCurrencySymbol})</strong>
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {primaryClientCards.map((card, idx) => {
                       const Icon = card.icon;
                       return (
@@ -2705,112 +2931,353 @@ ${metricsSummary}`;
             )}
 
             {(activeTab === 'overview' || activeTab === 'audience') && (
-              <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className={`p-5 rounded-2xl border ${
-                  darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
-                }`}>
-                  <div className="mb-4">
-                    <h3 className="font-bold text-base">Placement ROAS & Spend Breakdown</h3>
-                    <p className="text-xs text-slate-400">Instagram Reels & Stories lead return efficiency</p>
-                  </div>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={placements} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#1e293b' : '#e2e8f0'} />
-                        <XAxis type="number" stroke="#64748b" fontSize={11} />
-                        <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={11} width={110} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: darkMode ? '#0f172a' : '#ffffff',
-                            borderColor: '#1e293b',
-                            borderRadius: '10px',
-                            fontSize: '12px'
-                          }}
-                        />
-                        <Legend />
-                        <Bar dataKey="roas" name="ROAS (x)" fill="#10b981" radius={[0, 6, 6, 0]} />
-                        <Bar dataKey="ctr" name="CTR (%)" fill="#3b82f6" radius={[0, 6, 6, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={`p-5 rounded-2xl border ${
-                  darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
-                }`}>
-                  <div className="mb-4">
-                    <h3 className="font-bold text-base">Age & Gender Conversion Split</h3>
-                    <p className="text-xs text-slate-400">25–44 demographic drives 74% of profitable sales</p>
-                  </div>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={demographics} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#1e293b' : '#e2e8f0'} />
-                        <XAxis dataKey="age" stroke="#64748b" fontSize={12} />
-                        <YAxis stroke="#64748b" fontSize={12} />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: darkMode ? '#0f172a' : '#ffffff',
-                            borderColor: '#1e293b',
-                            borderRadius: '10px',
-                            fontSize: '12px'
-                          }}
-                        />
-                        <Legend />
-                        <Bar dataKey="female" name="Female Conv." stackId="a" fill="#8b5cf6" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="male" name="Male Conv." stackId="a" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={`p-5 rounded-2xl border flex flex-col justify-between ${
-                  darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
-                }`}>
+              <section className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <h3 className="font-bold text-base">Device & OS Attribution</h3>
-                    <p className="text-xs text-slate-400">Traffic share & conversion efficiency by device</p>
+                    <h2 className="text-base lg:text-lg font-bold flex items-center gap-2">
+                      <Globe className="w-5 h-5 text-blue-400" /> Complete Placements, Customer Age Groups & Country/Region Intelligence
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Full visual charts and granular telemetry tables for every Ad Placement, Customer Age Bracket, and Geographic Location
+                    </p>
                   </div>
+                </div>
 
-                  <div className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={deviceSplit}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={45}
-                          outerRadius={72}
-                          paddingAngle={4}
-                        >
-                          {deviceSplit.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: darkMode ? '#0f172a' : '#ffffff',
-                            borderColor: '#1e293b',
-                            borderRadius: '10px',
-                            fontSize: '12px'
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/60">
-                    {deviceSplit.map((d) => (
-                      <div key={d.name} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-slate-950/50">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                          <span className="truncate text-slate-300">{d.name}</span>
+                {/* ROW 1: PLACEMENTS & AGE GROUP CHARTS + COMPLETE TABLES */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  {/* 1. COMPLETE PLACEMENTS BREAKDOWN (CHART + TABLE) */}
+                  <div className={`p-5 rounded-2xl border flex flex-col justify-between ${
+                    darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-bold text-base flex items-center gap-2">
+                            <Instagram className="w-4 h-4 text-pink-400" /> 1. Placements Performance (Platform & Position)
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Spend ({activeCurrencySymbol}), Results, CTR & CPA across Facebook, Instagram, Messenger & Audience Network
+                          </p>
                         </div>
-                        <span className="font-bold text-emerald-400 ml-1">{d.roas}x</span>
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                          {placements.length} Placements
+                        </span>
                       </div>
-                    ))}
+
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={placements.slice(0, 8)}
+                            layout="vertical"
+                            margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#1e293b' : '#e2e8f0'} />
+                            <XAxis type="number" stroke="#64748b" fontSize={11} />
+                            <YAxis
+                              dataKey="name"
+                              type="category"
+                              stroke="#94a3b8"
+                              fontSize={10}
+                              width={145}
+                              tick={{ fill: darkMode ? '#cbd5e1' : '#334155' }}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                                borderColor: '#1e293b',
+                                borderRadius: '10px',
+                                fontSize: '12px'
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="spend" name={`Spend (${activeCurrencySymbol})`} fill="#3b82f6" radius={[0, 6, 6, 0]} />
+                            <Bar dataKey="conversions" name="Results" fill="#10b981" radius={[0, 6, 6, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Complete Placements Table */}
+                      <div className="mt-4 overflow-x-auto max-h-64 border-t border-slate-800/70 pt-3">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400">
+                              <th className="py-2 px-2">Placement Name</th>
+                              <th className="py-2 px-2 text-right">Spend</th>
+                              <th className="py-2 px-2 text-right">Results</th>
+                              <th className="py-2 px-2 text-right">Cost/Result</th>
+                              <th className="py-2 px-2 text-right">Impr.</th>
+                              <th className="py-2 px-2 text-right">CTR</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/50">
+                            {placements.map((pl, idx) => (
+                              <tr key={idx} className="hover:bg-slate-800/30">
+                                <td className="py-2 px-2 font-semibold text-slate-200">{pl.name}</td>
+                                <td className="py-2 px-2 text-right font-bold text-blue-400">{fmtMoney(pl.spend)}</td>
+                                <td className="py-2 px-2 text-right font-bold text-emerald-400">{formatNumber(pl.conversions)}</td>
+                                <td className="py-2 px-2 text-right text-violet-300">{pl.conversions > 0 ? fmtMoney(pl.cpa) : '—'}</td>
+                                <td className="py-2 px-2 text-right text-slate-300">{formatNumber(pl.impressions || 0)}</td>
+                                <td className="py-2 px-2 text-right text-cyan-400">{Number(pl.ctr || 0).toFixed(2)}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. COMPLETE AGE GROUP & GENDER CUSTOMER DATA (CHART + TABLE) */}
+                  <div className={`p-5 rounded-2xl border flex flex-col justify-between ${
+                    darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-bold text-base flex items-center gap-2">
+                            <Users className="w-4 h-4 text-violet-400" /> 2. Customer Age Group & Gender Breakdown
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Complete customer demographics showing Male vs. Female Results, Spend & Cost Per Result by Age
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/30">
+                          {demographics.length} Age Brackets
+                        </span>
+                      </div>
+
+                      <div className="h-64 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={demographics} margin={{ top: 5, right: 15, left: -5, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#1e293b' : '#e2e8f0'} />
+                            <XAxis dataKey="age" stroke="#94a3b8" fontSize={12} />
+                            <YAxis stroke="#94a3b8" fontSize={12} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                                borderColor: '#1e293b',
+                                borderRadius: '10px',
+                                fontSize: '12px'
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="female" name="Female Results" stackId="a" fill="#ec4899" radius={[0, 0, 0, 0]} />
+                            <Bar dataKey="male" name="Male Results" stackId="a" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="spend" name={`Spend (${activeCurrencySymbol})`} fill="#10b981" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Complete Age Group Customer Table */}
+                      <div className="mt-4 overflow-x-auto max-h-64 border-t border-slate-800/70 pt-3">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400">
+                              <th className="py-2 px-2">Age Group</th>
+                              <th className="py-2 px-2 text-right">Spend</th>
+                              <th className="py-2 px-2 text-right">Total Results</th>
+                              <th className="py-2 px-2 text-right">Male / Female</th>
+                              <th className="py-2 px-2 text-right">Cost/Result</th>
+                              <th className="py-2 px-2 text-right">Impressions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/50">
+                            {demographics.map((dm, idx) => {
+                              const totRes = dm.totalResults !== undefined ? dm.totalResults : (dm.male || 0) + (dm.female || 0);
+                              const cpaVal = dm.cpa !== undefined ? dm.cpa : totRes > 0 ? dm.spend / totRes : 0;
+                              return (
+                                <tr key={idx} className="hover:bg-slate-800/30">
+                                  <td className="py-2 px-2 font-bold text-white">{dm.age} yrs</td>
+                                  <td className="py-2 px-2 text-right font-semibold text-blue-400">{fmtMoney(dm.spend)}</td>
+                                  <td className="py-2 px-2 text-right font-bold text-emerald-400">{formatNumber(totRes)}</td>
+                                  <td className="py-2 px-2 text-right text-slate-300">
+                                    <span className="text-blue-400">{formatNumber(dm.male)}M</span> / <span className="text-pink-400">{formatNumber(dm.female)}F</span>
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-violet-300">{totRes > 0 ? fmtMoney(cpaVal) : '—'}</td>
+                                  <td className="py-2 px-2 text-right text-slate-300">{formatNumber(dm.impressions || 0)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ROW 2: COUNTRY & REGION GEOLOCATION DATA (CHART + TABLE) & DEVICE SPLIT */}
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  {/* 3. COUNTRY & REGION GEOLOCATION PERFORMANCE */}
+                  <div className={`xl:col-span-2 p-5 rounded-2xl border ${
+                    darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h3 className="font-bold text-base flex items-center gap-2">
+                          <Globe className="w-4 h-4 text-emerald-400" /> 3. Country & State/Region Performance Breakdown
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          See exactly which Countries and Provinces/States are generating your highest Results & lowest CPR
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-slate-800 self-start">
+                        <button
+                          onClick={() => setGeoViewMode('region')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                            geoViewMode === 'region'
+                              ? 'bg-blue-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          State / Region ({regionsData.length})
+                        </button>
+                        <button
+                          onClick={() => setGeoViewMode('country')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                            geoViewMode === 'country'
+                              ? 'bg-blue-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          Countries ({countriesData.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={geoViewMode === 'region' ? regionsData.slice(0, 10) : countriesData.slice(0, 10)}
+                          margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke={darkMode ? '#1e293b' : '#e2e8f0'} />
+                          <XAxis
+                            dataKey={geoViewMode === 'region' ? 'name' : 'country'}
+                            stroke="#94a3b8"
+                            fontSize={10}
+                            interval={0}
+                            angle={-15}
+                            textAnchor="end"
+                            height={50}
+                          />
+                          <YAxis yAxisId="left" stroke="#3b82f6" fontSize={11} />
+                          <YAxis yAxisId="right" orientation="right" stroke="#10b981" fontSize={11} />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                              borderColor: '#1e293b',
+                              borderRadius: '10px',
+                              fontSize: '12px'
+                            }}
+                          />
+                          <Legend />
+                          <Bar
+                            yAxisId="left"
+                            dataKey="spend"
+                            name={`Spend (${activeCurrencySymbol})`}
+                            fill="#3b82f6"
+                            radius={[6, 6, 0, 0]}
+                          />
+                          <Bar
+                            yAxisId="right"
+                            dataKey="conversions"
+                            name="Results"
+                            fill="#10b981"
+                            radius={[6, 6, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Complete Country / Region Table */}
+                    <div className="mt-4 overflow-x-auto max-h-64 border-t border-slate-800/70 pt-3">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400">
+                            <th className="py-2 px-2">{geoViewMode === 'region' ? 'State / Region (Country)' : 'Country'}</th>
+                            <th className="py-2 px-2 text-right">Amount Spent</th>
+                            <th className="py-2 px-2 text-right">Results</th>
+                            <th className="py-2 px-2 text-right">Cost / Result</th>
+                            <th className="py-2 px-2 text-right">Reach</th>
+                            <th className="py-2 px-2 text-right">Impressions</th>
+                            <th className="py-2 px-2 text-right">Clicks (CTR)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/50">
+                          {(geoViewMode === 'region' ? regionsData : countriesData).map((loc, i) => (
+                            <tr key={i} className="hover:bg-slate-800/30">
+                              <td className="py-2 px-2 font-semibold text-white">
+                                {geoViewMode === 'region' ? loc.name : loc.country}
+                              </td>
+                              <td className="py-2 px-2 text-right font-bold text-blue-400">{fmtMoney(loc.spend)}</td>
+                              <td className="py-2 px-2 text-right font-bold text-emerald-400">{formatNumber(loc.conversions)}</td>
+                              <td className="py-2 px-2 text-right text-violet-300">
+                                {loc.conversions > 0 ? fmtMoney(loc.cpa) : '—'}
+                              </td>
+                              <td className="py-2 px-2 text-right text-slate-300">{formatNumber(loc.reach || 0)}</td>
+                              <td className="py-2 px-2 text-right text-slate-300">{formatNumber(loc.impressions || 0)}</td>
+                              <td className="py-2 px-2 text-right text-cyan-400">
+                                {formatNumber(loc.clicks || 0)} ({Number(loc.ctr || 0).toFixed(2)}%)
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* 4. DEVICE & OS ATTRIBUTION */}
+                  <div className={`p-5 rounded-2xl border flex flex-col justify-between ${
+                    darkMode ? 'bg-slate-900/75 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
+                    <div>
+                      <h3 className="font-bold text-base">4. Device & OS Attribution</h3>
+                      <p className="text-xs text-slate-400">Traffic share & conversion efficiency by customer device</p>
+                    </div>
+
+                    <div className="h-52">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={deviceSplit}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={72}
+                            paddingAngle={4}
+                          >
+                            {deviceSplit.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: darkMode ? '#0f172a' : '#ffffff',
+                              borderColor: '#1e293b',
+                              borderRadius: '10px',
+                              fontSize: '12px'
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-800/60">
+                      {deviceSplit.map((d) => (
+                        <div key={d.name} className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                            <span className="truncate text-slate-200 font-medium">{d.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-slate-400">{d.value}% Share</span>
+                            <span className="font-bold text-emerald-400">{d.roas}x ROAS</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -2928,10 +3395,11 @@ ${metricsSummary}`;
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                          <span>Reach: <strong className="text-slate-200">{formatNumber(cmp.reach)}</strong> ({cmp.frequency.toFixed(1)}x)</span>
-                          <span>Clicks: <strong className="text-blue-400">{formatNumber(cmp.linkClicks)} ({cmp.ctr.toFixed(2)}%)</strong></span>
-                          <span>CPC: <strong className="text-slate-200">{fmtMoney(cmp.cpc)}</strong></span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
+                          <span>Reach: <strong className="text-slate-200">{formatNumber(cmp.reach)}</strong></span>
+                          <span>Impr: <strong className="text-amber-300">{formatNumber(cmp.impressions)}</strong> (CPM: {fmtMoney(cmp.cpm)})</span>
+                          <span>CTR: <strong className="text-blue-400">{cmp.ctr.toFixed(2)}%</strong></span>
+                          <span>ROAS: <strong className="text-emerald-400">{cmp.roas.toFixed(2)}x</strong></span>
                         </div>
                       </div>
                     );
@@ -2952,10 +3420,10 @@ ${metricsSummary}`;
                         <th className="py-3.5 px-3 text-right">Results</th>
                         <th className="py-3.5 px-3 text-right">Cost Per Result</th>
                         <th className="py-3.5 px-3 text-right">Reach</th>
-                        <th className="py-3.5 px-3 text-right">Impressions</th>
-                        <th className="py-3.5 px-3 text-right">Link Clicks (CTR)</th>
+                        <th className="py-3.5 px-3 text-right">Impressions & CPM</th>
+                        <th className="py-3.5 px-3 text-right">Clicks & CTR</th>
                         <th className="py-3.5 px-3 text-right">CPC</th>
-                        <th className="py-3.5 px-4">ROAS / Quality</th>
+                        <th className="py-3.5 px-4 text-right">ROAS</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 text-xs">
@@ -3016,8 +3484,9 @@ ${metricsSummary}`;
                               {formatNumber(cmp.reach, activeCurrencySymbol)}
                               <span className="block text-[10px] text-slate-400">{cmp.frequency.toFixed(2)}x freq</span>
                             </td>
-                            <td className="py-3.5 px-3 text-right text-slate-300">
+                            <td className="py-3.5 px-3 text-right text-slate-200 font-medium">
                               {formatNumber(cmp.impressions, activeCurrencySymbol)}
+                              <span className="block text-[10px] text-amber-400">CPM: {fmtMoney(cmp.cpm)}</span>
                             </td>
                             <td className="py-3.5 px-3 text-right font-medium">
                               {formatNumber(cmp.linkClicks, activeCurrencySymbol)}
@@ -3027,15 +3496,10 @@ ${metricsSummary}`;
                               {fmtMoney(cmp.cpc)}
                             </td>
 
-                            <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-2">
-                                {cmp.revenue > 0 && (
-                                  <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                    {cmp.roas.toFixed(2)}x
-                                  </span>
-                                )}
-                                <div title="Quality Ranking">{renderRankingBadge(cmp.qualityRanking)}</div>
-                              </div>
+                            <td className="py-3.5 px-4 text-right">
+                              <span className="px-2 py-0.5 rounded-lg font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                {cmp.roas.toFixed(2)}x
+                              </span>
                             </td>
                           </tr>
                         );
